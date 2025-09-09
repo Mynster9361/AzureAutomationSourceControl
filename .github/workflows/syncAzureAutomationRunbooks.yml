@@ -45,13 +45,19 @@ jobs:
         fi
         echo "$DIFF_OUTPUT"
 
+        # Separate added/modified and deleted files
+        ADDED_MODIFIED_FILES=$(echo "$DIFF_OUTPUT" | grep -E '^(A|M)\s' | awk '{print $2}' | tr '\n' ' ')
+        DELETED_FILES=$(echo "$DIFF_OUTPUT" | grep -E '^D\s' | awk '{print $2}' | tr '\n' ' ')
+        echo "ADDED_MODIFIED_FILES=$ADDED_MODIFIED_FILES" >> $GITHUB_ENV
+        echo "DELETED_FILES=$DELETED_FILES" >> $GITHUB_ENV
+
     - name: Display changed files
       run: |
-        echo "Changed files:"
-        echo "${{ steps.changed-files.outputs.DIFF_OUTPUT }}"
-        echo "DIFF_OUTPUT<<EOF" >> $GITHUB_ENV
-        echo "${{ steps.changed-files.outputs.DIFF_OUTPUT }}" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+        echo "Added or Modified files:"
+        echo "$ADDED_MODIFIED_FILES"
+        echo "----------------------"
+        echo "Deleted files:"
+        echo "$DELETED_FILES"
 
     # Here you would add the Azure login and runbook sync steps
     # - name: Login to Azure
