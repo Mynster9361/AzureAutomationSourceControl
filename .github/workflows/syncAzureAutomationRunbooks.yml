@@ -43,13 +43,50 @@ jobs:
           echo "Manual workflow run, getting all files"
           DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
         fi
+
+        echo "Changes detected:"
         echo "$DIFF_OUTPUT"
 
-        # Separate added/modified and deleted files
-        ADDED_MODIFIED_FILES=$(echo "$DIFF_OUTPUT" | grep -E '^(A|M)\s' | awk '{print $2}' | tr '\n' ' ')
-        DELETED_FILES=$(echo "$DIFF_OUTPUT" | grep -E '^D\s' | awk '{print $2}' | tr '\n' ' ')
+        # Create separate files for added/modified and deleted files
+        ADDED_MODIFIED_FILES=""
+        DELETED_FILES=""
+
+        # Process each line individually to handle all cases, including renames
+        while IFS= read -r line; do
+          if [[ -z "$line" ]]; then
+            continue  # Skip empty lines
+          fi
+
+          status=${line:0:1}  # Get first character (status code)
+
+          if [[ "$status" == "A" || "$status" == "M" ]]; then
+            # Added or modified file
+            file=$(echo "$line" | awk '{print $2}')
+            ADDED_MODIFIED_FILES+="$file "
+          elif [[ "$status" == "D" ]]; then
+            # Deleted file
+            file=$(echo "$line" | awk '{print $2}')
+            DELETED_FILES+="$file "
+          elif [[ "$status" == "R" ]]; then
+            # Renamed file - treat as both deletion and addition
+            old_file=$(echo "$line" | awk '{print $2}')
+            new_file=$(echo "$line" | awk '{print $3}')
+            DELETED_FILES+="$old_file "
+            ADDED_MODIFIED_FILES+="$new_file "
+          fi
+        done <<< "$DIFF_OUTPUT"
+
+        # Trim trailing spaces
+        ADDED_MODIFIED_FILES=$(echo "$ADDED_MODIFIED_FILES" | xargs)
+        DELETED_FILES=$(echo "$DELETED_FILES" | xargs)
+
+        # Set environment variables
         echo "ADDED_MODIFIED_FILES=$ADDED_MODIFIED_FILES" >> $GITHUB_ENV
         echo "DELETED_FILES=$DELETED_FILES" >> $GITHUB_ENV
+
+        echo "Processed changes:"
+        echo "Added/Modified: $ADDED_MODIFIED_FILES"
+        echo "Deleted: $DELETED_FILES"
 
     - name: Display changed files
       run: |
@@ -72,5 +109,7 @@ jobs:
     #     resource_group: ${{ secrets.RESOURCE_GROUP_NAME }}
     #     automation_account: ${{ secrets.AUTOMATION_ACCOUNT_NAME }}
     #     runbooks_path: "."  # Or your specific path
+    #     added_modified_files: "${{ env.ADDED_MODIFIED_FILES }}"
+    #     deleted_files: "${{ env.DELETED_FILES }}"
     #     sync_mode: "Changed"  # Only process changed files
     #     delete_mode: "OnlyDeleted"  # Only delete files explicitly removed
