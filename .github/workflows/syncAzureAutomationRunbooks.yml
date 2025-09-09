@@ -1,0 +1,32 @@
+name: Sync Azure Automation Runbooks
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+
+permissions:
+  contents: read
+
+jobs:
+  sync-runbooks:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: git diff
+      id: git-diff
+      run: |
+        echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
+        git diff --name-only ${{ github.event.before }} ${{ github.sha }} || true
+        echo "EOF" >> $GITHUB_ENV
+
+    - name: Display changed files
+      run: |
+        echo "$CHANGED_FILES"
+
