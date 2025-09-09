@@ -44,9 +44,18 @@ jobs:
           DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
         fi
 
-        # Set outputs for use in later steps
-        echo "ADDED_MODIFIED=$(echo "$DIFF_OUTPUT" | grep -E '^[AM]' || echo '')" >> $GITHUB_ENV
-        echo "DELETED=$(echo "$DIFF_OUTPUT" | grep -E '^D' || echo '')" >> $GITHUB_ENV
+        # Extract added/modified and deleted files
+        ADDED_MODIFIED=$(echo "$DIFF_OUTPUT" | grep -E '^[AM]' || echo '')
+        DELETED=$(echo "$DIFF_OUTPUT" | grep -E '^D' || echo '')
+
+        # Convert to arrays for easier handling
+        echo "added_modified_files<<EOF" >> $GITHUB_ENV
+        echo "$ADDED_MODIFIED" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
+        echo "deleted_files<<EOF" >> $GITHUB_ENV
+        echo "$DELETED" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
 
         # Display changes for debugging
         echo "Changes detected:"
@@ -55,10 +64,10 @@ jobs:
     - name: Display changed files
       run: |
         echo "Added or Modified files:"
-        echo "$ADDED_MODIFIED"
+        echo "$added_modified_files"
         echo "----------------------"
         echo "Deleted files:"
-        echo "$DELETED"
+        echo "$deleted_files"
 
     # Here you would add the Azure login and runbook sync steps
     # - name: Login to Azure
