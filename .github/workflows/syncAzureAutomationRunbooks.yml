@@ -47,11 +47,11 @@ jobs:
 
     - name: Display changed files
       run: |
-        echo "Added or Modified files:"
-        echo "$added_modified_files"
-        echo "----------------------"
-        echo "Deleted files:"
-        echo "$deleted_files"
+        echo "Changed files:"
+        echo "${{ steps.changed-files.outputs.DIFF_OUTPUT }}"
+        echo "DIFF_OUTPUT<<EOF" >> $GITHUB_ENV
+        echo "${{ steps.changed-files.outputs.DIFF_OUTPUT }}" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
 
     # Here you would add the Azure login and runbook sync steps
     # - name: Login to Azure
