@@ -96,20 +96,100 @@ jobs:
         echo "Deleted files:"
         echo "$DELETED_FILES"
 
-    # Here you would add the Azure login and runbook sync steps
-    # - name: Login to Azure
-    #   uses: azure/login@v1
-    #   with:
-    #     creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        enable-AzPSSession: true
 
-    # - name: Sync Azure Automation Runbooks
-    #   uses: ./  # Assumes the action is in the root of this repository
-    #   with:
-    #     subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    #     resource_group: ${{ secrets.RESOURCE_GROUP_NAME }}
-    #     automation_account: ${{ secrets.AUTOMATION_ACCOUNT_NAME }}
-    #     runbooks_path: "."  # Or your specific path
-    #     added_modified_files: "${{ env.ADDED_MODIFIED_FILES }}"
-    #     deleted_files: "${{ env.DELETED_FILES }}"
-    #     sync_mode: "Changed"  # Only process changed files
-    #     delete_mode: "OnlyDeleted"  # Only delete files explicitly removed
+
+    - name: Sync Azure Automation Runbooks
+      shell: pwsh
+      run: |
+        $subscriptionId = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+        $resourceGroup = "${{ secrets.AZURE_RESOURCE_GROUP }}"
+        $automationAccount = "${{ secrets.AZURE_AUTOMATION_ACCOUNT }}"
+        $addedModifiedFiles = "${{ env.ADDED_MODIFIED_FILES }}"
+        $deletedFiles = "${{ env.DELETED_FILES }}"
+
+        # Install Azure PowerShell module if not already installed
+        if (-not (Get-Module -ListAvailable -Name Az)) {
+          Install-Module -Name Az -Scope CurrentUser -Force
+        }
+
+        # Import the Az module
+        Import-Module Az
+
+        # Connect to Azure (the azure/login action already handles authentication)
+        Write-Host "Connected to Azure"
+
+        # Function to upload or update a runbook
+        function Upload-Runbook {
+          param (
+            [string]$filePath,
+            [string]$resourceGroup,
+            [string]$automationAccount
+          )
+
+          $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+          $runbookContent = Get-Content -Path $filePath -Raw
+
+          # Check if the runbook already exists
+          $existingRunbook = Get-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -ErrorAction SilentlyContinue
+
+          if ($null -ne $existingRunbook) {
+            Write-Host "Updating existing runbook: $runbookName"
+            Set-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -Content $runbookContent -Type "PowerShell" -Force
+          } else {
+            Write-Host "Creating new runbook: $runbookName"
+            New-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -Content $runbookContent -Type "PowerShell"
+          }
+        }
+
+        # Function to delete a runbook
+        function Delete-Runbook {
+          param (
+            [string]$filePath,
+            [string]$resourceGroup,
+            [string]$automationAccount
+          )
+
+          $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+
+          # Check if the runbook exists before attempting to delete
+          $existingRunbook = Get-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -ErrorAction SilentlyContinue
+
+          if ($null -ne $existingRunbook) {
+            Write-Host "Deleting runbook: $runbookName"
+            Remove-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -Force
+          } else {
+            Write-Host "Runbook $runbookName does not exist, skipping deletion."
+          }
+        }
+        # Process added or modified files
+        if (-not [string]::IsNullOrEmpty($addedModifiedFiles)) {
+          $addedModifiedFilesArray = $addedModifiedFiles -split ' '
+          foreach ($file in $addedModifiedFilesArray) {
+            if (Test-Path -Path $file) {
+              Write-Host "Processing added/modified file: $file"
+              Upload-Runbook -filePath $file -resourceGroup $resourceGroup -automationAccount $automationAccount
+            } else {
+              Write-Host "File $file does not exist, skipping."
+            }
+          }
+        } else {
+          Write-Host "No added or modified files to process."
+        }
+        # Process deleted files
+        if (-not [string]::IsNullOrEmpty($deletedFiles)) {
+          $deletedFilesArray = $deletedFiles -split ' '
+          foreach ($file in $deletedFilesArray) {
+            Write-Host "Processing deleted file: $file"
+            Delete-Runbook -filePath $file -resourceGroup $resourceGroup -automationAccount $automationAccount
+          }
+        } else {
+          Write-Host "No deleted files to process."
+        }
+
