@@ -106,7 +106,6 @@ jobs:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        enable-AzPSSession: true
 
 
     - name: Sync Azure Automation Runbooks
@@ -117,81 +116,106 @@ jobs:
         $automationAccount = "${{ secrets.AZURE_AUTOMATION_ACCOUNT }}"
         $addedModifiedFiles = "${{ env.ADDED_MODIFIED_FILES }}"
         $deletedFiles = "${{ env.DELETED_FILES }}"
+        $token = (az account get-access-token --query accessToken -o tsv)
 
-        # Install Azure PowerShell module if not already installed
-        if (-not (Get-Module -ListAvailable -Name Az)) {
-          Install-Module -Name Az -Scope CurrentUser -Force
+        $headers = @{
+          Authorization = "Bearer $token"
+          "Content-Type" = "application/json"
         }
+        $baseUrl = "https://management.azure.com"
+        $apiVersion = "2024-10-23"
+        # Used to get a list of existing runbooks
+        $listUrl = "$baseUrl/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Automation/automationAccounts/$automationAccount/runbooks?api-version=$apiVersion"
 
-        # Import the Az module
-        Import-Module Az
+        $createModifyUrl = "$baseUrl/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Automation/automationAccounts/$automationAccount/runbooks/{0}?api-version=$apiVersion"
+        $deleteUrl = "$baseUrl/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Automation/automationAccounts/$automationAccount/runbooks/{0}?api-version=$apiVersion"
 
-        # Connect to Azure (the azure/login action already handles authentication)
-        Write-Host "Connected to Azure"
+        # list of existing runbooks in the automation account
+        # This step is needed in order to retain tags set on existing runbooks
+        [System.Collections.Generic.List[System.Object]] $existingRunbooks = @()
+        $listResponse = Invoke-RestMethod -Uri $listUrl -Method Get -Headers $headers
+        $existingRunbooks.addRange($listResponse.value)
+        do {
+          $listResponse = Invoke-RestMethod -Uri $listResponse.nextLink -Method Get -Headers $headers
+          $existingRunbooks.addRange($listResponse.value)
+        } until ($null -eq $listResponse.nextLink)
 
-        # Function to upload or update a runbook
-        function Upload-Runbook {
-          param (
-            [string]$filePath,
-            [string]$resourceGroup,
-            [string]$automationAccount
-          )
-
-          $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
-          $runbookContent = Get-Content -Path $filePath -Raw
-
-          # Check if the runbook already exists
-          $existingRunbook = Get-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -ErrorAction SilentlyContinue
-
-          if ($null -ne $existingRunbook) {
-            Write-Host "Updating existing runbook: $runbookName"
-            Set-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -Content $runbookContent -Type "PowerShell" -Force
-          } else {
-            Write-Host "Creating new runbook: $runbookName"
-            New-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -Content $runbookContent -Type "PowerShell"
-          }
-        }
-
-        # Function to delete a runbook
-        function Delete-Runbook {
-          param (
-            [string]$filePath,
-            [string]$resourceGroup,
-            [string]$automationAccount
-          )
-
-          $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
-
-          # Check if the runbook exists before attempting to delete
-          $existingRunbook = Get-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -ErrorAction SilentlyContinue
-
-          if ($null -ne $existingRunbook) {
-            Write-Host "Deleting runbook: $runbookName"
-            Remove-AzAutomationRunbook -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccount -Name $runbookName -Force
-          } else {
-            Write-Host "Runbook $runbookName does not exist, skipping deletion."
-          }
-        }
         # Process added or modified files
-        if (-not [string]::IsNullOrEmpty($addedModifiedFiles)) {
-          $addedModifiedFilesArray = $addedModifiedFiles -split ' '
-          foreach ($file in $addedModifiedFilesArray) {
-            if (Test-Path -Path $file) {
-              Write-Host "Processing added/modified file: $file"
-              Upload-Runbook -filePath $file -resourceGroup $resourceGroup -automationAccount $automationAccount
+        if (-not [string]::IsNullOrWhiteSpace($addedModifiedFiles)) {
+          $addedModifiedFiles.Split(" ") | ForEach-Object {
+            $filePath = $_.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($filePath) -and (Test-Path $filePath)) {
+              $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+              $runbookType = "PowerShell"
+              if ($filePath -like "*.ps1") {
+                $runbookType = "PowerShell"
+              } elseif ($filePath -like "*.py") {
+                $runbookType = "Python2"
+              } elseif ($filePath -like "*.py3") {
+                $runbookType = "Python3"
+              } else {
+                Write-Warning "Unsupported file type for $filePath. Skipping."
+                return
+              }
+              $content = Get-Content -Path $filePath -Raw
+              $existingRunbook = $existingRunbooks | Where-Object { $_.name -eq $runbookName }
+              if ($null -ne $existingRunbook) {
+                Write-Host "Modifying existing runbook: $runbookName"
+                $url = [string]::Format($createModifyUrl, $runbookName)
+                $body = @{
+                  properties = @{
+                    runbookType = $runbookType
+                    logVerbose = $true
+                    logProgress = $true
+                    description = "Updated via GitHub Actions"
+                    draft = @{
+                      inEdit = $false
+                      draftContent = $content
+                    }
+                  }
+                } | ConvertTo-Json -Depth 10
+                Invoke-RestMethod -Uri $url -Method Put -Headers $headers -Body $body
+              } else {
+                Write-Host "Creating new runbook: $runbookName"
+                $url = [string]::Format($createModifyUrl, $runbookName)
+                $body = @{
+                  properties = @{
+                    runbookType = $runbookType
+                    logVerbose = $true
+                    logProgress = $true
+                    description = "Created via GitHub Actions"
+                    draft = @{
+                      inEdit = $false
+                      draftContent = $content
+                    }
+                  }
+                } | ConvertTo-Json -Depth 10
+                Invoke-RestMethod -Uri $url -Method Put -Headers $headers -Body $body
+              }
             } else {
-              Write-Host "File $file does not exist, skipping."
+              Write-Warning "File $filePath does not exist. Skipping."
             }
           }
         } else {
           Write-Host "No added or modified files to process."
         }
         # Process deleted files
-        if (-not [string]::IsNullOrEmpty($deletedFiles)) {
-          $deletedFilesArray = $deletedFiles -split ' '
-          foreach ($file in $deletedFilesArray) {
-            Write-Host "Processing deleted file: $file"
-            Delete-Runbook -filePath $file -resourceGroup $resourceGroup -automationAccount $automationAccount
+        if (-not [string]::IsNullOrWhiteSpace($deletedFiles)) {
+          $deletedFiles.Split(" ") | ForEach-Object {
+            $filePath = $_.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($filePath)) {
+              $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+              $existingRunbook = $existingRunbooks | Where-Object { $_.name -eq $runbookName }
+              if ($null -ne $existingRunbook) {
+                Write-Host "Deleting runbook: $runbookName"
+                $url = [string]::Format($deleteUrl, $runbookName)
+                Invoke-RestMethod -Uri $url -Method Delete -Headers $headers
+              } else {
+                Write-Warning "Runbook $runbookName does not exist in Azure Automation. Skipping deletion."
+              }
+            } else {
+              Write-Warning "Invalid file path for deletion. Skipping."
+            }
           }
         } else {
           Write-Host "No deleted files to process."
