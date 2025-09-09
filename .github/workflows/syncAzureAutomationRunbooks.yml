@@ -124,6 +124,17 @@ jobs:
         }
         $baseUrl = "https://management.azure.com"
         $apiVersion = "2024-10-23"
+
+        $getAutomationAccountUrl = "$baseUrl/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Automation/automationAccounts/$automationAccount?api-version=$apiVersion"
+        # Verify that the Automation Account exists
+        try {
+          $automationAccountResponse = Invoke-RestMethod -Uri $getAutomationAccountUrl -Method Get -Headers $headers
+          Write-Host "Automation Account '$automationAccount' found in resource group '$resourceGroup'."
+        } catch {
+          Write-Error "Failed to find Automation Account '$automationAccount' in resource group '$resourceGroup'. Please check your configuration."
+          exit 1
+        }
+
         # Used to get a list of existing runbooks
         $listUrl = "$baseUrl/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Automation/automationAccounts/$automationAccount/runbooks?api-version=$apiVersion"
 
@@ -163,11 +174,10 @@ jobs:
                 Write-Host "Modifying existing runbook: $runbookName"
                 $url = [string]::Format($createModifyUrl, $runbookName)
                 $body = @{
+                  location = $automationAccountResponse.location
+                  tags = $existingRunbook.tags
                   properties = @{
                     runbookType = $runbookType
-                    logVerbose = $true
-                    logProgress = $true
-                    description = "Updated via GitHub Actions"
                     draft = @{
                       inEdit = $false
                       draftContent = $content
@@ -177,13 +187,12 @@ jobs:
                 Invoke-RestMethod -Uri $url -Method Put -Headers $headers -Body $body
               } else {
                 Write-Host "Creating new runbook: $runbookName"
-                $url = [string]::Format($createModifyUrl, $runbookName)
+                $url = [string]::Format($createModifyUrl)
                 $body = @{
+                  location = $automationAccountResponse.location
+                  name = $runbookName
                   properties = @{
                     runbookType = $runbookType
-                    logVerbose = $true
-                    logProgress = $true
-                    description = "Created via GitHub Actions"
                     draft = @{
                       inEdit = $false
                       draftContent = $content
