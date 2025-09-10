@@ -219,27 +219,25 @@ jobs:
       shell: pwsh
       run: |
         # Sync Azure Automation Runbooks
-        shell: pwsh
-        run: |
-          $subscriptionId = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-          $resourceGroup = "${{ secrets.AZURE_RESOURCE_GROUP }}"
-          $automationAccount = "${{ secrets.AZURE_AUTOMATION_ACCOUNT }}"
-          $addedModifiedFiles = "${{ env.ADDED_MODIFIED_FILES }}"
-          $deletedFiles = "${{ env.DELETED_FILES }}"
+        $subscriptionId = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+        $resourceGroup = "${{ secrets.AZURE_RESOURCE_GROUP }}"
+        $automationAccount = "${{ secrets.AZURE_AUTOMATION_ACCOUNT }}"
+        $addedModifiedFiles = "${{ env.ADDED_MODIFIED_FILES }}"
+        $deletedFiles = "${{ env.DELETED_FILES }}"
 
-          # No need to check path filter again - files are already filtered
-          # Just log what we're processing for reference
-          Write-Output "Processing files from GitHub Actions workflow..."
-          Write-Output "Added/Modified files: $addedModifiedFiles"
-          Write-Output "Deleted files: $deletedFiles"
+        # No need to check path filter again - files are already filtered
+        # Just log what we're processing for reference
+        Write-Output "Processing files from GitHub Actions workflow..."
+        Write-Output "Added/Modified files: $addedModifiedFiles"
+        Write-Output "Deleted files: $deletedFiles"
 
-          # Validate essential inputs
-          if ([string]::IsNullOrWhiteSpace($subscriptionId) -or
-            [string]::IsNullOrWhiteSpace($resourceGroup) -or
-            [string]::IsNullOrWhiteSpace($automationAccount)) {
-            Write-Error "Required parameters are missing. Ensure subscription ID, resource group, and automation account name are provided."
-            exit 1
-          }
+        # Validate essential inputs
+        if ([string]::IsNullOrWhiteSpace($subscriptionId) -or
+          [string]::IsNullOrWhiteSpace($resourceGroup) -or
+          [string]::IsNullOrWhiteSpace($automationAccount)) {
+          Write-Error "Required parameters are missing. Ensure subscription ID, resource group, and automation account name are provided."
+          exit 1
+        }
 
 
         function Get-RunbookType {
