@@ -541,7 +541,7 @@ jobs:
 
           # Report on skipped files
           if ($skippedFiles.Count -gt 0) {
-            Write-Warning "The following files were skipped due to name conflicts:"
+            Write-Warning "The following files were skipped:"
             foreach ($skippedFile in $skippedFiles) {
               Write-Warning "  - $skippedFile"
             }
