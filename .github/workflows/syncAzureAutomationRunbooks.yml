@@ -172,9 +172,9 @@ jobs:
             }
           }
           else {
-            # Default to PowerShell for other file types
-            Write-Warning "Unrecognized file extension for $FilePath. Defaulting to PowerShell."
-            return "PowerShell"
+            # Default to Unrecognized for other file types
+            Write-Warning "Unrecognized file extension for $FilePath. Defaulting to Unrecognized. Won't process this file."
+            return "Unrecognized"
           }
         }
 
@@ -414,6 +414,11 @@ jobs:
                 if ($null -ne $existingRunbook -and $existingRunbook.properties.runbookType -ne $runbookType) {
                   Write-Error "Name conflict detected with existing runbook: A runbook named '$runbookName' already exists with type '$($existingRunbook.properties.runbookType)' but this file requires type '$runbookType'. Please use a different name for your runbook."
                   Write-Warning "Skipping file $filePath due to name conflict with existing runbook in Azure."
+                  $skippedFiles += $filePath
+                  $skip = $true
+                }
+                elseif ($runbookType -eq "Unrecognized") {
+                  Write-Warning "Skipping file $filePath due to unrecognized runbook type."
                   $skippedFiles += $filePath
                   $skip = $true
                 }
