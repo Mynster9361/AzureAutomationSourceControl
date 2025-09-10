@@ -6,6 +6,20 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      path_filter:
+        description: 'Path filter to process (e.g., "runbooks/" for specific folder, "." for all files)'
+        required: false
+        default: '.'
+      exclude_paths:
+        description: 'Comma-separated list of paths to exclude (e.g., ".github/,.vscode/")'
+        required: false
+        default: '.github/,.vscode/,docs/,README.md,LICENSE'
+      validate_all:
+        description: 'Process all files rather than just changed ones'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,25 +41,116 @@ jobs:
     - name: Get changed files
       id: changed-files
       run: |
+        # Get path filter from workflow dispatch or use default
+        PATH_FILTER="${{ github.event.inputs.path_filter || '.' }}"
+        echo "Using path filter: $PATH_FILTER"
+
+        # Process exclude paths
+        EXCLUDE_PATHS="${{ github.event.inputs.exclude_paths || '.github/,.vscode/,docs/,README.md,LICENSE' }}"
+        echo "Excluding paths: $EXCLUDE_PATHS"
+
+        # Convert exclude paths to grep pattern
+        EXCLUDE_PATTERN=""
+        IFS=',' read -ra EXCLUDE_ARRAY <<< "$EXCLUDE_PATHS"
+        for i in "${EXCLUDE_ARRAY[@]}"; do
+          if [[ -n "$EXCLUDE_PATTERN" ]]; then
+            EXCLUDE_PATTERN="$EXCLUDE_PATTERN|"
+          fi
+          EXCLUDE_PATTERN="${EXCLUDE_PATTERN}^$i"
+        done
+
         # Different approach based on event type
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+        if [[ "${{ github.event.inputs.validate_all }}" == "true" ]]; then
+          # For manual validation of all files
+          echo "Manual validation of all files"
+
+          if [[ "$PATH_FILTER" == "." ]]; then
+            # Process all files in repo, excluding specified paths
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+            else
+              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+            fi
+          else
+            # Process only files in specified path
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+            else
+              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+            fi
+          fi
+
+        elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
           # For pull requests, compare base and head commits
           echo "Getting changes from PR"
-          DIFF_OUTPUT=$(git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          DIFF_RAW=$(git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+
+          # Apply path filter and exclusions
+          if [[ "$PATH_FILTER" == "." ]]; then
+            # Process all changed files, excluding specified paths
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -v -E "$EXCLUDE_PATTERN")
+            else
+              DIFF_OUTPUT="$DIFF_RAW"
+            fi
+          else
+            # Process only changed files in specified path
+            DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+
+            # Also apply exclusions if specified
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(echo "$DIFF_OUTPUT" | grep -v -E "$EXCLUDE_PATTERN")
+            fi
+          fi
+
         elif [[ "${{ github.event_name }}" == "push" ]]; then
           # For pushes, compare previous and current commits
           echo "Getting changes from push"
           if [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
-            DIFF_OUTPUT=$(git diff --name-status ${{ github.event.before }} ${{ github.sha }})
+            DIFF_RAW=$(git diff --name-status ${{ github.event.before }} ${{ github.sha }})
           else
             # First push to branch case - compare with the first parent commit
             echo "First push to branch, getting all files"
-            DIFF_OUTPUT=$(git diff --name-status $(git rev-parse HEAD^) ${{ github.sha }})
+            DIFF_RAW=$(git diff --name-status $(git rev-parse HEAD^) ${{ github.sha }})
           fi
+
+          # Apply path filter and exclusions
+          if [[ "$PATH_FILTER" == "." ]]; then
+            # Process all changed files, excluding specified paths
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -v -E "$EXCLUDE_PATTERN")
+            else
+              DIFF_OUTPUT="$DIFF_RAW"
+            fi
+          else
+            # Process only changed files in specified path
+            DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+
+            # Also apply exclusions if specified
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(echo "$DIFF_OUTPUT" | grep -v -E "$EXCLUDE_PATTERN")
+            fi
+          fi
+
         else
-          # For workflow_dispatch or other events, list all files
-          echo "Manual workflow run, getting all files"
-          DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+          # For other events, list all files according to filter
+          echo "Other event, filtering files based on path"
+
+          if [[ "$PATH_FILTER" == "." ]]; then
+            # Process all files in repo, excluding specified paths
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+            else
+              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+            fi
+          else
+            # Process only files in specified path
+            if [[ -n "$EXCLUDE_PATTERN" ]]; then
+              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+            else
+              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+            fi
+          fi
         fi
 
         echo "Changes detected:"
@@ -87,13 +192,16 @@ jobs:
         # Set environment variables
         echo "ADDED_MODIFIED_FILES=$ADDED_MODIFIED_FILES" >> $GITHUB_ENV
         echo "DELETED_FILES=$DELETED_FILES" >> $GITHUB_ENV
+        echo "PATH_FILTER=$PATH_FILTER" >> $GITHUB_ENV
 
         echo "Processed changes:"
+        echo "Path filter: $PATH_FILTER"
         echo "Added/Modified: $ADDED_MODIFIED_FILES"
         echo "Deleted: $DELETED_FILES"
 
     - name: Display changed files
       run: |
+        echo "Path filter: $PATH_FILTER"
         echo "Added or Modified files:"
         echo "$ADDED_MODIFIED_FILES"
         echo "----------------------"
@@ -107,22 +215,33 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-
     - name: Sync Azure Automation Runbooks
       shell: pwsh
       run: |
-        $subscriptionId = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-        $resourceGroup = "${{ secrets.AZURE_RESOURCE_GROUP }}"
-        $automationAccount = "${{ secrets.AZURE_AUTOMATION_ACCOUNT }}"
-        $addedModifiedFiles = "${{ env.ADDED_MODIFIED_FILES }}"
-        $deletedFiles = "${{ env.DELETED_FILES }}"
-        # Validate essential inputs
-        if ([string]::IsNullOrWhiteSpace($subscriptionId) -or
-          [string]::IsNullOrWhiteSpace($resourceGroup) -or
-          [string]::IsNullOrWhiteSpace($automationAccount)) {
-          Write-Error "Required parameters are missing. Ensure subscription ID, resource group, and automation account name are provided."
-          exit 1
-        }
+        # Sync Azure Automation Runbooks
+        shell: pwsh
+        run: |
+          $subscriptionId = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          $resourceGroup = "${{ secrets.AZURE_RESOURCE_GROUP }}"
+          $automationAccount = "${{ secrets.AZURE_AUTOMATION_ACCOUNT }}"
+          $addedModifiedFiles = "${{ env.ADDED_MODIFIED_FILES }}"
+          $deletedFiles = "${{ env.DELETED_FILES }}"
+
+          # No need to check path filter again - files are already filtered
+          # Just log what we're processing for reference
+          Write-Output "Processing files from GitHub Actions workflow..."
+          Write-Output "Added/Modified files: $addedModifiedFiles"
+          Write-Output "Deleted files: $deletedFiles"
+
+          # Validate essential inputs
+          if ([string]::IsNullOrWhiteSpace($subscriptionId) -or
+            [string]::IsNullOrWhiteSpace($resourceGroup) -or
+            [string]::IsNullOrWhiteSpace($automationAccount)) {
+            Write-Error "Required parameters are missing. Ensure subscription ID, resource group, and automation account name are provided."
+            exit 1
+          }
+
+
         function Get-RunbookType {
           param(
             [string]$FilePath,
