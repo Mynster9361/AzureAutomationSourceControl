@@ -100,7 +100,7 @@ jobs:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     - name: Sync Azure Automation Runbooks
-      uses: Mynster9361/azure-automation-source-control@v1.0.0
+      uses: Mynster9361/AzureAutomationSourceControl@v1.0.0
       with:
         subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
@@ -166,7 +166,7 @@ workflow My-Workflow {
 ### Process Only Files in a Specific Directory
 
 ```yml
-- uses: Mynster9361/azure-automation-source-control@v1.0.0
+- uses: Mynster9361/AzureAutomationSourceControl@v1.0.0
   with:
     subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
@@ -177,7 +177,7 @@ workflow My-Workflow {
 ### Exclude Specific Files
 
 ```yml
-- uses: Mynster9361/azure-automation-source-control@v1.0.0
+- uses: Mynster9361/AzureAutomationSourceControl@v1.0.0
   with:
     subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
@@ -188,7 +188,7 @@ workflow My-Workflow {
 ### Process All Files (Not Just Changed Ones)
 
 ```yml
-- uses: Mynster9361/azure-automation-source-control@v1.0.0
+- uses: Mynster9361/AzureAutomationSourceControl@v1.0.0
   with:
     subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
@@ -199,7 +199,7 @@ workflow My-Workflow {
 ### Process Only Top-Level Files in a Directory (Non-Recursive)
 
 ```yml
-- uses: Mynster9361/azure-automation-source-control@v1.0.0
+- uses: Mynster9361/AzureAutomationSourceControl@v1.0.0
   with:
     subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
