@@ -18,6 +18,10 @@ inputs:
     description: 'Path filter to process (e.g., "runbooks/" for specific folder, "." for all files)'
     required: false
     default: "."
+  recursive:
+    description: "Process files recursively within the path_filter directory (true/false)"
+    required: false
+    default: "true"
   exclude_paths:
     description: 'Comma-separated list of paths to exclude (e.g., ".github/,.vscode/")'
     required: false
@@ -45,6 +49,10 @@ runs:
         PATH_FILTER="${{ inputs.path_filter || '.' }}"
         echo "Using path filter: $PATH_FILTER"
 
+        # Get recursive flag
+        RECURSIVE="${{ inputs.recursive || 'true' }}"
+        echo "Recursive processing: $RECURSIVE"
+
         # Process exclude paths
         EXCLUDE_PATHS="${{ inputs.exclude_paths || '.github/,.vscode/,docs/,README.md,LICENSE' }}"
         echo "Excluding paths: $EXCLUDE_PATHS"
@@ -67,16 +75,32 @@ runs:
           if [[ "$PATH_FILTER" == "." ]]; then
             # Process all files in repo, excluding specified paths
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
-              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find . -maxdepth 1 -type f -not -path "*/\.*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              fi
             else
-              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find . -maxdepth 1 -type f -not -path "*/\.*" | sed 's/^\.\//A /')
+              fi
             fi
           else
             # Process only files in specified path
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
-              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find $PATH_FILTER -maxdepth 1 -type f -not -path "*/\.*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              fi
             else
-              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find $PATH_FILTER -maxdepth 1 -type f -not -path "*/\.*" | sed 's/^\.\//A /')
+              fi
             fi
           fi
 
@@ -95,7 +119,12 @@ runs:
             fi
           else
             # Process only changed files in specified path
-            DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+            if [[ "$RECURSIVE" == "true" ]]; then
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+            else
+              # Only match files directly in the path, not subdirectories
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -E "^[ADM]\s\+$PATH_FILTER[^/]*$")
+            fi
 
             # Also apply exclusions if specified
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
@@ -124,7 +153,12 @@ runs:
             fi
           else
             # Process only changed files in specified path
-            DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+            if [[ "$RECURSIVE" == "true" ]]; then
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+            else
+              # Only match files directly in the path, not subdirectories
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -E "^[ADM]\s\+$PATH_FILTER[^/]*$")
+            fi
 
             # Also apply exclusions if specified
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
@@ -139,16 +173,32 @@ runs:
           if [[ "$PATH_FILTER" == "." ]]; then
             # Process all files in repo, excluding specified paths
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
-              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find . -maxdepth 1 -type f -not -path "*/\.*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              fi
             else
-              DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find . -maxdepth 1 -type f -not -path "*/\.*" | sed 's/^\.\//A /')
+              fi
             fi
           else
             # Process only files in specified path
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
-              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find $PATH_FILTER -maxdepth 1 -type f -not -path "*/\.*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
+              fi
             else
-              DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              if [[ "$RECURSIVE" == "true" ]]; then
+                DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
+              else
+                DIFF_OUTPUT=$(find $PATH_FILTER -maxdepth 1 -type f -not -path "*/\.*" | sed 's/^\.\//A /')
+              fi
             fi
           fi
         fi

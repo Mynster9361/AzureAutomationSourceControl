@@ -100,7 +100,7 @@ jobs:
 
 Once set up, the action will run automatically on push to the main branch or when manually triggered.
 
-Configuration Options
+## Configuration Options
 
 | Input                | Description                                              | Default                                   |
 | -------------------- | -------------------------------------------------------- | ----------------------------------------- |
@@ -108,6 +108,7 @@ Configuration Options
 | resource_group       | Resource group containing the Automation Account         | Required                                  |
 | automation_account   | Name of the Automation Account                           | Required                                  |
 | path_filter          | Path to process (e.g., "runbooks/" or "." for all files) | .                                         |
+| recursive            | Process files recursively within the path_filter         | true                                      |
 | exclude_paths        | Comma-separated list of paths to exclude                 | .github/,.vscode/,docs/,README.md,LICENSE |
 | validate_all         | Process all files rather than just changed ones          | false                                     |
 | added_modified_files | Space-separated list of added/modified files (optional)  | Auto-detected                             |
@@ -178,4 +179,16 @@ workflow My-Workflow {
     resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
     automation_account: ${{ secrets.AZURE_AUTOMATION_ACCOUNT }}
     validate_all: true
+```
+
+### Process Only Top-Level Files in a Directory (Non-Recursive)
+
+```yml
+- uses: Mynster9361/azure-automation-source-control@v1
+  with:
+    subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+    automation_account: ${{ secrets.AZURE_AUTOMATION_ACCOUNT }}
+    path_filter: 'runbooks/'
+    recursive: false
 ```
