@@ -50,6 +50,8 @@ jobs:
         # Optional: specify config name to use, relative to .github/
         with:
           config-name: release-drafter.yml
+          tag: ${{ github.event.inputs.tag || '' }}
+          name: ${{ github.event.inputs.tag != '' && format('v{0}', github.event.inputs.tag) || '' }}
 
       # If manually triggered and publish is true, publish the draft release
       - name: Publish Release
@@ -82,7 +84,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           echo "::notice ::Release updated at ${{ steps.release_drafter.outputs.html_url }}"
-          echo "Release ${{ steps.release_drafter.outputs.name }} ready."
+          TAG="${{ github.event.inputs.tag || steps.release_drafter.outputs.tag_name }}"
+          echo "Release ${{ steps.release_drafter.outputs.name }} ready with tag: $TAG"
           if [[ "${{ github.event.inputs.publish }}" == "true" ]]; then
             echo "Release has been published!"
           else
