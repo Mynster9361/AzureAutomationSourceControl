@@ -1,3 +1,0 @@
-
-
-Write-Output "It works!"
