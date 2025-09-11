@@ -108,16 +108,8 @@ template: |
   ## Contributors
 
   $CONTRIBUTORS
-  | `subscription_id` | Azure subscription ID | Required |
-  | `resource_group` | Resource group name | Required |
-  | `automation_account` | Automation account name | Required |
-  | `path_filter` | Path filter for files | `.` (all files) |
-  | `recursive` | Process files recursively | `true` |
-  | `exclude_paths` | Paths to exclude | `.github/,.vscode/,docs/,README.md,LICENSE` |
-  | `validate_all` | Process all files | `false` |
+
 
   ## Full documentation
 
   See the [README](https://github.com/Mynster9361/AzureAutomationSourceControl/blob/main/README.md) for full documentation.
-
-  $CONTRIBUTORS
