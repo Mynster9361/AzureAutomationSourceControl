@@ -11,6 +11,11 @@ on:
         description: 'Path filter to process (e.g., "runbooks/" for specific folder, "." for all files)'
         required: false
         default: '.'
+      recursive:
+        description: 'Process files recursively within the path_filter directory'
+        required: false
+        type: boolean
+        default: true
       exclude_paths:
         description: 'Comma-separated list of paths to exclude (e.g., ".github/,.vscode/")'
         required: false
@@ -50,4 +55,7 @@ jobs:
         subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         resource_group: ${{ secrets.AZURE_RESOURCE_GROUP }}
         automation_account: ${{ secrets.AZURE_AUTOMATION_ACCOUNT }}
-        validate_all: true
+        path_filter: ${{ github.event.inputs.path_filter || '.' }}
+        recursive: ${{ github.event.inputs.recursive || 'true' }}
+        exclude_paths: ${{ github.event.inputs.exclude_paths || '.github/,.vscode/,docs/,README.md,LICENSE' }}
+        validate_all: ${{ github.event.inputs.validate_all || 'false' }}
