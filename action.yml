@@ -295,12 +295,45 @@ runs:
         Write-Output "Added/Modified files: $addedModifiedFiles"
         Write-Output "Deleted files: $deletedFiles"
 
-        # Call the main script to process the files
-        $splat = @{
-          SubscriptionId         = $subscriptionId
-          ResourceGroupName      = $resourceGroup
-          AutomationAccountName  = $automationAccount
-          AddedModifiedFiles     = $addedModifiedFiles
-          DeletedFiles           = $deletedFiles
+        # Get Azure token using OIDC credentials from GitHub
+        if ($env:GITHUB_ACTIONS -eq "true") {
+          try {
+            Write-Output "Getting Azure token using GitHub OIDC credentials..."
+            # This requires the azure/login action to be run first with appropriate permissions
+            $token = (az account get-access-token --subscription $subscriptionId --query accessToken -o tsv)
+
+            if (-not $token) {
+              throw "Failed to get Azure token"
+            }
+
+            Write-Output "Successfully obtained Azure token"
+
+            # Add token to script parameters
+            $splat = @{
+              SubscriptionId         = $subscriptionId
+              ResourceGroupName      = $resourceGroup
+              AutomationAccountName  = $automationAccount
+              AddedModifiedFiles     = $addedModifiedFiles
+              DeletedFiles           = $deletedFiles
+              Token                  = $token
+            }
+          }
+          catch {
+            Write-Error "Failed to get Azure token: $_"
+            Write-Error "Ensure the azure/login step was run before this action"
+            exit 1
+          }
         }
+        else {
+          # For local testing - no token provided
+          $splat = @{
+            SubscriptionId         = $subscriptionId
+            ResourceGroupName      = $resourceGroup
+            AutomationAccountName  = $automationAccount
+            AddedModifiedFiles     = $addedModifiedFiles
+            DeletedFiles           = $deletedFiles
+          }
+        }
+
+        # Call the main script
         & ${{ github.action_path }}/Start-AzureAutomationSourceControl.ps1 @splat

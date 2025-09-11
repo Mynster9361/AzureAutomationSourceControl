@@ -3,7 +3,8 @@ param(
   [string]$resourceGroup,
   [string]$automationAccount,
   [string]$addedModifiedFiles,
-  [string]$deletedFiles
+  [string]$deletedFiles,
+  [string]$token
 )
 function Get-RunbookType {
   param(
@@ -223,7 +224,20 @@ function Invoke-AzRestMethod {
   return $result
 }
 
-$token = (az account get-access-token --query accessToken -o tsv)
+if (-not $token) {
+  try {
+    Write-Output "No token provided, attempting to get one using Azure CLI..."
+    $token = (az account get-access-token --query accessToken -o tsv)
+
+    if (-not $token) {
+      throw "Failed to get Azure authentication token."
+    }
+  }
+  catch {
+    Write-Error "Failed to get Azure authentication token: $_"
+    exit 1
+  }
+}
 
 $headers = @{
   Authorization  = "Bearer $token"
