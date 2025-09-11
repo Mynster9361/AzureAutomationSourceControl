@@ -1,0 +1,473 @@
+param(
+  [string]$subscriptionId,
+  [string]$resourceGroup,
+  [string]$automationAccount,
+  [string]$addedModifiedFiles,
+  [string]$deletedFiles
+)
+function Get-RunbookType {
+  param(
+    [string]$FilePath,
+    [string]$Content
+  )
+
+  $extension = [System.IO.Path]::GetExtension($FilePath).ToLower()
+
+  # Handle Python files
+  if ($extension -eq ".py") {
+    # Look for Python version hints in the content
+    if ($Content -match "#\s*python3" -or $Content -match "#!/usr/bin/env python3") {
+      return "Python3"
+    }
+    elseif ($Content -match "#\s*python2" -or $Content -match "#!/usr/bin/env python2") {
+      return "Python2"
+    }
+    else {
+      # Default to Python (latest version) if no specific version is specified
+      return "Python3"
+    }
+  }
+  # Handle PowerShell files
+  elseif ($extension -eq ".ps1") {
+    # Look for type hints in the content
+    if ($Content -match "#\s*PowerShell72") {
+      return "PowerShell72"
+    }
+    elseif ($Content -match "#\s*PowerShellWorkflow" -or $Content -match "workflow\s+\w+\s*\{") {
+      return "PowerShellWorkflow"
+    }
+    elseif ($Content -match "#\s*GraphPowerShellWorkflow") {
+      return "GraphPowerShellWorkflow"
+    }
+    elseif ($Content -match "#\s*GraphPowerShell") {
+      return "GraphPowerShell"
+    }
+    elseif ($Content -match "#\s*Graph") {
+      return "Graph"
+    }
+    elseif ($Content -match "#\s*Script") {
+      return "Script"
+    }
+    else {
+      # Default to PowerShell if no specific type is specified
+      return "PowerShell"
+    }
+  }
+  else {
+    # Default to Unrecognized for other file types
+    Write-Warning "Unrecognized file extension for $FilePath. Defaulting to Unrecognized. Won't process this file."
+    return "Unrecognized"
+  }
+}
+
+function Invoke-AzRestMethod {
+  <#
+  .SYNOPSIS
+    Execute REST API calls against Azure Resource Manager with advanced features.
+  .DESCRIPTION
+    This function provides a robust wrapper around Invoke-RestMethod for Azure Resource Manager API calls,
+    with support for throttling, pagination, comprehensive error handling, and retry logic.
+  .PARAMETER Uri
+    The full URI for the API request.
+  .PARAMETER Method
+    HTTP method to use (GET, PUT, POST, DELETE, etc.)
+  .PARAMETER Headers
+    Headers to include in the request.
+  .PARAMETER Body
+    The request body content
+  .PARAMETER MaxRetries
+    Maximum number of retry attempts for retryable errors (defaults to 3).
+  .PARAMETER RetryDelaySeconds
+    Initial delay between retries in seconds (defaults to 2).
+  .PARAMETER Recursive
+    For paginated results, automatically follow nextLink values and return combined results.
+  .EXAMPLE
+    Invoke-AzRestMethod -Uri "https://management.azure.com/subscriptions/{subId}/resourceGroups/{rg}/providers/Microsoft.Automation/automationAccounts/{account}?api-version=2024-10-23" -Method Get -Headers $headers
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Uri,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Method,
+
+    [Parameter(Mandatory = $true)]
+    [hashtable]$Headers,
+
+    [Parameter(Mandatory = $false)]
+    [string]$Body,
+
+    [Parameter(Mandatory = $false)]
+    [int]$MaxRetries = 3,
+
+    [Parameter(Mandatory = $false)]
+    [int]$RetryDelaySeconds = 2,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Recursive
+  )
+
+  # Initialize result collection if recursive mode is enabled
+  if ($Recursive) {
+    [System.Collections.Generic.List[System.Object]] $allResults = @()
+  }
+
+  # Track the current URI (for pagination)
+  $currentUri = $Uri
+
+  # Main request processing loop (for pagination)
+  do {
+    $retryCount = 0
+    $success = $false
+    $response = $null
+
+    # Retry loop for handling transient errors
+    while (-not $success -and $retryCount -le $MaxRetries) {
+      try {
+
+        if ($Body) {
+          $response = Invoke-RestMethod -Uri $currentUri -Method $Method -Headers $Headers -Body $Body -ErrorAction Stop
+        }
+        else {
+          $response = Invoke-RestMethod -Uri $currentUri -Method $Method -Headers $Headers -ErrorAction Stop
+        }
+
+        $success = $true
+      }
+      catch {
+        $retryCount++
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        $errorDetails = $null
+
+        # Try to parse error details
+        try {
+          $errorDetails = $_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue
+        }
+        catch {
+          # If conversion fails, use the raw error message
+          $errorDetails = $_.ErrorDetails.Message
+        }
+
+        # Handle specific status codes
+        if ($statusCode -eq 429 -or ($statusCode -ge 500 -and $statusCode -lt 600)) {
+          # Throttling (429) or server errors (5xx) - retry with backoff
+          $delay = $RetryDelaySeconds * [Math]::Pow(2, ($retryCount - 1))  # Exponential backoff
+
+          # If server provides a Retry-After header, use that instead
+          if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers["Retry-After"]) {
+            $delay = [int]$_.Exception.Response.Headers["Retry-After"] + 1
+          }
+
+          if ($retryCount -le $MaxRetries) {
+            Write-Warning "Throttled or encountered server error (Status: $statusCode). Retrying in $delay seconds... (Attempt $retryCount of $MaxRetries)"
+            Start-Sleep -Seconds $delay
+            continue  # Try again
+          }
+        }
+
+        # If we get here, it's either a non-retryable error or we've exceeded retries
+        $errorMessage = "Error $statusCode`: $($_.Exception.Message)"
+        if ($errorDetails.error.message) {
+          $errorMessage += " - $($errorDetails.error.message)"
+        }
+
+        Write-Error "Failed with status code $statusCode"
+        Write-Error "Error details: $errorMessage"
+        Write-Error "Request URI: $currentUri"
+
+        if ($Body) {
+          Write-Error "Request body: $Body"
+        }
+
+        throw $errorMessage
+      }
+    }
+
+    # Process successful response
+    if ($Recursive) {
+      # For paginated results, add items to our collection
+      if ($response.value) {
+        $allResults.AddRange($response.value)
+      }
+      elseif ($response -and $null -eq $response.value) {
+        # If no .value property but response exists, it's a single item
+        $allResults.Add($response)
+      }
+
+      # Update URI for next page if it exists
+      if ($response.'@odata.nextLink') {
+        $currentUri = $response.'@odata.nextLink'
+      }
+      elseif ($response.nextLink) {
+        $currentUri = $response.nextLink
+      }
+      else {
+        $currentUri = $null  # No more pages
+      }
+    }
+    else {
+      # If not recursive, just return the response
+      $currentUri = $null
+    }
+  } while ($Recursive -and $currentUri)
+
+  # Return results
+  if ($Recursive) {
+    $result = if ($allResults.Count -gt 0) { $allResults.ToArray() } else { $null }
+  }
+  else {
+    $result = $response
+  }
+
+  return $result
+}
+
+$token = (az account get-access-token --query accessToken -o tsv)
+
+$headers = @{
+  Authorization  = "Bearer $token"
+  "Content-Type" = "application/json"
+}
+$apiVersion = "2024-10-23"
+# get automation account base URL
+$baseUrl = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Automation/automationAccounts/$automationAccount"
+# Used to list, create, modify, publish, and delete runbooks
+$listUrl = "$baseUrl/runbooks?api-version=$apiVersion"
+$createModifyUrl = "$baseUrl/runbooks/{0}?api-version=$apiVersion"
+$draftUrl = "$baseUrl/runbooks/{0}/draft/content?api-version=$apiVersion"
+$publishUrl = "$baseUrl/runbooks/{0}/publish?api-version=$apiVersion"
+$deleteUrl = "$baseUrl/runbooks/{0}?api-version=$apiVersion"
+
+$getAutomationAccountUrl = "$baseUrl`?api-version=$apiVersion"
+# Verify that the Automation Account exists
+try {
+  $automationAccountResponse = Invoke-AzRestMethod -Uri $getAutomationAccountUrl -Method Get -Headers $headers
+  Write-Output "Automation Account '$automationAccount' found in resource group '$resourceGroup'."
+}
+catch {
+  Write-Error "Failed to find Automation Account '$automationAccount' in resource group '$resourceGroup'. Please check your configuration."
+  exit 1
+}
+
+# list of existing runbooks in the automation account
+$existingRunbooks = Invoke-AzRestMethod -Uri $listUrl -Method Get -Headers $headers -Recursive
+
+# Keep track of runbooks we've processed in this session to detect conflicts
+$processedRunbooks = @{}
+
+# Process added or modified files
+if (-not [string]::IsNullOrWhiteSpace($addedModifiedFiles)) {
+  # First pass - analyze all files to detect conflicts before making any changes
+  $filesToProcess = @()
+  $skippedFiles = @()
+  $seenRunbookNames = @{}  # Track which runbook names we've already seen
+
+  # Sort files to process PowerShell files before Python files (if you prefer a different priority)
+  $sortedFiles = $addedModifiedFiles.Split(" ") | Sort-Object -Property {
+    $ext = [System.IO.Path]::GetExtension($_.Trim()).ToLower()
+    if ($ext -eq ".ps1") { 0 } else { 1 }
+  }
+
+  foreach ($file in $sortedFiles) {
+    $filePath = $file.Trim()
+    if (-not [string]::IsNullOrWhiteSpace($filePath) -and (Test-Path $filePath)) {
+      $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+      $content = Get-Content -Path $filePath -Raw
+      $runbookType = Get-RunbookType -FilePath $filePath -Content $content
+      $skip = $false
+
+      # Check if this runbook name has already been processed in this session
+      if ($seenRunbookNames.ContainsKey($runbookName)) {
+        $existingPath = $seenRunbookNames[$runbookName].FilePath
+        $existingType = $seenRunbookNames[$runbookName].RunbookType
+
+        # If types don't match, we have a conflict - the first file seen takes precedence
+        if ($existingType -ne $runbookType) {
+          Write-Error "Name conflict detected within the current batch: A runbook named '$runbookName' already exists in file '$existingPath' with type '$existingType', but '$filePath' requires type '$runbookType'. Please use different names for different runbook types."
+          Write-Warning "Skipping file $filePath due to name conflict within the current batch (the earlier file '$existingPath' takes precedence)."
+          $skippedFiles += $filePath
+          $skip = $true
+        }
+      }
+      # Check if a runbook with the same name but different type exists in Azure
+      else {
+        $existingRunbook = $existingRunbooks | Where-Object { $_.name -eq $runbookName }
+        if ($null -ne $existingRunbook -and $existingRunbook.properties.runbookType -ne $runbookType) {
+          Write-Error "Name conflict detected with existing runbook: A runbook named '$runbookName' already exists with type '$($existingRunbook.properties.runbookType)' but this file requires type '$runbookType'. Please use a different name for your runbook."
+          Write-Warning "Skipping file $filePath due to name conflict with existing runbook in Azure."
+          $skippedFiles += $filePath
+          $skip = $true
+        }
+        elseif ($runbookType -eq "Unrecognized") {
+          Write-Warning "Skipping file $filePath due to unrecognized runbook type."
+          $skippedFiles += $filePath
+          $skip = $true
+        }
+      }
+
+      if (-not $skip) {
+        # Add to processing queue and tracking
+        $filesToProcess += @{
+          FilePath        = $filePath
+          RunbookName     = $runbookName
+          Content         = $content
+          RunbookType     = $runbookType
+          ExistingRunbook = $existingRunbook
+        }
+
+        # Track that we've seen this runbook name
+        $seenRunbookNames[$runbookName] = @{
+          FilePath    = $filePath
+          RunbookType = $runbookType
+        }
+      }
+    }
+    else {
+      Write-Warning "File $filePath does not exist. Skipping."
+    }
+  }
+
+  # Now process the validated files
+  foreach ($file in $filesToProcess) {
+    $filePath = $file.FilePath
+    $runbookName = $file.RunbookName
+    $content = $file.Content
+    $runbookType = $file.RunbookType
+    $existingRunbook = $file.ExistingRunbook
+
+    Write-Output "Processing $filePath as $runbookType runbook"
+
+    if ($null -ne $existingRunbook) {
+      Write-Output "Modifying existing runbook: $runbookName"
+      $url = [string]::Format($createModifyUrl, "$runbookName")
+
+      # First create/update the runbook in draft mode
+      $draftBody = @{
+        location   = $existingRunbook.location
+        tags       = $existingRunbook.tags
+        properties = @{
+          runbookType = $runbookType
+          logVerbose  = $existingRunbook.properties.logVerbose
+          logProgress = $existingRunbook.properties.logProgress
+          draft       = @{}
+        }
+      } | ConvertTo-Json -Depth 10
+
+      try {
+        Invoke-AzRestMethod -Uri $url -Method Put -Headers $headers -Body $draftBody
+
+        # Now update the draft content and publish
+        $draftUrl = "$baseUrl/runbooks/$runbookName/draft/content?api-version=$apiVersion"
+
+        # For updating draft content, we need to send the raw content with the appropriate content type
+        $draftHeaders = $headers.Clone()
+        $draftHeaders["Content-Type"] = "text/plain"
+
+        Invoke-AzRestMethod -Uri $draftUrl -Method Put -Headers $draftHeaders -Body $content
+
+        # Publish the draft
+        $publishUrl = "$baseUrl/runbooks/$runbookName/publish?api-version=$apiVersion"
+
+        Invoke-AzRestMethod -Uri $publishUrl -Method Post -Headers $headers
+
+        # Add to processed runbooks
+        $processedRunbooks[$runbookName] = $runbookType
+      }
+      catch {
+        Write-Error "Failed to modify runbook $runbookName`: $_"
+      }
+    }
+    else {
+      # For creating new runbooks
+      Write-Output "Creating new runbook: $runbookName"
+      $url = [string]::Format($createModifyUrl, "$runbookName")
+
+      # First create the runbook in draft mode
+      $draftBody = @{
+        location   = $automationAccountResponse.location
+        properties = @{
+          runbookType = $runbookType
+          logVerbose  = $false
+          logProgress = $false
+          draft       = @{}
+        }
+      } | ConvertTo-Json -Depth 10
+
+      try {
+
+        Invoke-AzRestMethod -Uri $url -Method Put -Headers $headers -Body $draftBody
+
+        # Now update the draft content and publish
+        $draftUrl = "$baseUrl/runbooks/$runbookName/draft/content?api-version=$apiVersion"
+
+        # For updating draft content, we need to send the raw content with the appropriate content type
+        $draftHeaders = $headers.Clone()
+        $draftHeaders["Content-Type"] = "text/plain"
+
+        Invoke-AzRestMethod -Uri $draftUrl -Method Put -Headers $draftHeaders -Body $content
+
+        # Publish the draft
+        $publishUrl = "$baseUrl/runbooks/$runbookName/publish?api-version=$apiVersion"
+
+        Invoke-AzRestMethod -Uri $publishUrl -Method Post -Headers $headers
+
+        # Add to processed runbooks
+        $processedRunbooks[$runbookName] = $runbookType
+      }
+      catch {
+        Write-Error "Failed to create runbook $runbookName`: $_"
+      }
+    }
+  }
+
+  # Report on skipped files
+  if ($skippedFiles.Count -gt 0) {
+    Write-Warning "The following files were skipped:"
+    foreach ($skippedFile in $skippedFiles) {
+      Write-Warning "  - $skippedFile"
+    }
+  }
+}
+else {
+  Write-Output "No added or modified files to process."
+}
+
+# Process deleted files
+if (-not [string]::IsNullOrWhiteSpace($deletedFiles)) {
+  # Parse the list of deleted files into a clean array
+  $deletedFilePaths = $deletedFiles.Split(" ") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() }
+
+  foreach ($filePath in $deletedFilePaths) {
+    # Skip empty paths
+    if ([string]::IsNullOrWhiteSpace($filePath)) {
+      continue
+    }
+
+    $runbookName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+
+    # Find the existing runbook (if any)
+    $existingRunbook = $existingRunbooks | Where-Object { $_.name -eq $runbookName }
+
+    # If no matching runbook found, skip
+    if ($null -eq $existingRunbook) {
+      Write-Warning "Runbook $runbookName does not exist in Azure Automation. Skipping deletion."
+      continue
+    }
+
+    # All checks passed - delete the runbook
+    Write-Output "Deleting runbook: $runbookName (type: $($existingRunbook.properties.runbookType))"
+    $url = [string]::Format($deleteUrl, $runbookName)
+
+    try {
+      Invoke-AzRestMethod -Uri $url -Method Delete -Headers $headers -Verbose
+      Write-Output "Successfully deleted runbook: $runbookName"
+    }
+    catch {
+      Write-Error "Failed to delete runbook $runbookName`: $_"
+    }
+  }
+}
+else {
+  Write-Output "No deleted files to process."
+}
