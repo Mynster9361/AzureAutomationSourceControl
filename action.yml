@@ -310,12 +310,12 @@ runs:
 
             # Add token to script parameters
             $splat = @{
-              SubscriptionId         = $subscriptionId
-              ResourceGroupName      = $resourceGroup
-              AutomationAccountName  = $automationAccount
-              AddedModifiedFiles     = $addedModifiedFiles
-              DeletedFiles           = $deletedFiles
-              Token                  = $token
+              subscriptionId      = $subscriptionId
+              resourceGroup       = $resourceGroup
+              automationAccount   = $automationAccount
+              addedModifiedFiles  = $addedModifiedFiles
+              deletedFiles        = $deletedFiles
+              token               = $token
             }
           }
           catch {
@@ -327,11 +327,11 @@ runs:
         else {
           # For local testing - no token provided
           $splat = @{
-            SubscriptionId         = $subscriptionId
-            ResourceGroupName      = $resourceGroup
-            AutomationAccountName  = $automationAccount
-            AddedModifiedFiles     = $addedModifiedFiles
-            DeletedFiles           = $deletedFiles
+            subscriptionId      = $subscriptionId
+            resourceGroup       = $resourceGroup
+            automationAccount   = $automationAccount
+            addedModifiedFiles  = $addedModifiedFiles
+            deletedFiles        = $deletedFiles
           }
         }
 
