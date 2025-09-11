@@ -22,11 +22,17 @@ Before using this action, you need:
 
 ### 1. Create Azure Service Principal
 
-Create a service principal with Contributor access to your Automation Account:
+Create a service principal with Contributor access to your Automation Account along with federated credentials to your repo:
 
-```bash
-az ad sp create-for-rbac --name "GitHubActionSP" --role contributor --scopes /subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.Automation/automationAccounts/{account-name}
-```
+#### Setup your app
+
+![App registration](docs/assets/img/appRegister.png)
+![App properties](docs/assets/img/appProps.png)
+![App credentials](docs/assets/img/appFed.png)
+![App federated credentials](docs/assets/img/appFedCreds.png)
+![Automation account properties](docs/assets/img/automationAccountProps.png)
+
+**Assign RBAC permissions to the above app on your Automation Account**
 
 ### 2. Store GitHub Secrets
 

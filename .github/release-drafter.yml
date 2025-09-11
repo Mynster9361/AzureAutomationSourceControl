@@ -89,12 +89,21 @@ template: |
 
   ## Installation
 
+  [Setup](https://github.com/Mynster9361/AzureAutomationSourceControl?tab=readme-ov-file#setup) For step by step instructions.
+
   ```yaml
   steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0  # Important to fetch all history for proper diffs
+
     - name: Azure Login
       uses: azure/login@v2
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     - name: Sync Azure Automation Runbooks
       uses: $OWNER/$REPOSITORY@v$RESOLVED_VERSION
@@ -103,6 +112,7 @@ template: |
         resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
         automationAccountName: ${{ secrets.AUTOMATION_ACCOUNT_NAME }}
         path: './runbooks'
+
   ```
 
   ## Contributors
