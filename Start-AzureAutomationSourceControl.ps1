@@ -474,7 +474,7 @@ if (-not [string]::IsNullOrWhiteSpace($deletedFiles)) {
     $url = [string]::Format($deleteUrl, $runbookName)
 
     try {
-      Invoke-AzRestMethod -Uri $url -Method Delete -Headers $headers -Verbose
+      Invoke-AzRestMethod -Uri $url -Method Delete -Headers $headers
       Write-Output "Successfully deleted runbook: $runbookName"
     }
     catch {

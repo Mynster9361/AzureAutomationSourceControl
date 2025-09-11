@@ -1,0 +1,94 @@
+name: Release Drafter
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number to release (e.g., v1.0.0)'
+        required: true
+      prerelease:
+        description: 'Is this a prerelease?'
+        type: boolean
+        default: false
+      draft:
+        description: 'Create as a draft release?'
+        type: boolean
+        default: true
+      title:
+        description: 'Release title (optional, defaults to version number)'
+        required: false
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Important for generating release notes based on history
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION_WITHOUT_V="${VERSION#v}"
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          echo "## Azure Automation Source Control $VERSION" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            echo "### Changes since $PREVIOUS_TAG" >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            git log --pretty=format:"* %s (%h)" $PREVIOUS_TAG..HEAD | grep -v "Merge pull request" >> RELEASE_NOTES.md
+          else
+            echo "### Initial Release" >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            git log --pretty=format:"* %s (%h)" | grep -v "Merge pull request" | head -20 >> RELEASE_NOTES.md
+          fi
+
+          # Add installation instructions
+          echo "" >> RELEASE_NOTES.md
+          echo "### Installation" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "```yaml" >> RELEASE_NOTES.md
+          echo "- uses: Mynster9361/AzureAutomationSourceControl@$VERSION" >> RELEASE_NOTES.md
+          echo "  with:" >> RELEASE_NOTES.md
+          echo "    subscription_id: \${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> RELEASE_NOTES.md
+          echo "    resource_group: \${{ secrets.AZURE_RESOURCE_GROUP }}" >> RELEASE_NOTES.md
+          echo "    automation_account: \${{ secrets.AZURE_AUTOMATION_ACCOUNT }}" >> RELEASE_NOTES.md
+          echo "```" >> RELEASE_NOTES.md
+
+          # Print the release notes for debugging
+          cat RELEASE_NOTES.md
+
+          # Save release notes to step outputs
+          notes="$(cat RELEASE_NOTES.md)"
+          notes="${notes//'%'/'%25'}"
+          notes="${notes//$'\n'/'%0A'}"
+          notes="${notes//$'\r'/'%0D'}"
+          echo "content=$notes" >> $GITHUB_OUTPUT
+
+      - name: Create Tag
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          git tag -f $VERSION
+          git push origin $VERSION -f
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: ${{ github.event.inputs.title || github.event.inputs.version }}
+          body: ${{ steps.release_notes.outputs.content }}
+          draft: ${{ github.event.inputs.draft }}
+          prerelease: ${{ github.event.inputs.prerelease }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Display Release URL
+        run: |
+          echo "::notice ::Release created at ${{ steps.create_release.outputs.url }}"
