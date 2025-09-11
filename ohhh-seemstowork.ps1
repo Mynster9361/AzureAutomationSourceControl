@@ -1,0 +1,1 @@
+Write-Output "Starting Azure Automation Source Control Sync..."
