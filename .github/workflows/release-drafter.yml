@@ -2,18 +2,33 @@ name: Release Drafter
 
 on:
   push:
-    # branches to consider in the event; optional, defaults to all
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '.github/**'
+      - '*.md'
+      - 'LICENSE'
+      - '.gitignore'
+
+  pull_request:
+    types: [opened, reopened, synchronize]
     branches:
       - main
       - master
 
-  # pull_request event is required only for autolabeler
-  pull_request:
-    # Only following types are handled by the action, but one can default to all as well
-    types: [opened, reopened, synchronize]
-  # pull_request_target event is required for autolabeler to support PRs from forks
-  # pull_request_target:
-  #   types: [opened, reopened, synchronize]
+  # Allow manual running to create/update a draft release any time
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the draft release'
+        required: false
+        type: boolean
+        default: false
+      tag:
+        description: 'Override release tag (leave empty for automatic)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -28,16 +43,48 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      # (Optional) GitHub Enterprise requires GHE_HOST variable set
-      #- name: Set GHE_HOST
-      #  run: |
-      #    echo "GHE_HOST=${GITHUB_SERVER_URL##https:\/\/}" >> $GITHUB_ENV
-
-      # Drafts your next Release notes as Pull Requests are merged into "master"
       - uses: release-drafter/release-drafter@v6
-        # (Optional) specify config name to use, relative to .github/. Default: release-drafter.yml
-        # with:
-        #   config-name: my-config.yml
-        #   disable-autolabeler: true
+        id: release_drafter
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Optional: specify config name to use, relative to .github/
+        with:
+          config-name: release-drafter.yml
+
+      # If manually triggered and publish is true, publish the draft release
+      - name: Publish Release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ steps.release_drafter.outputs.id }}
+            });
+
+            if (release.draft) {
+              console.log(`Publishing draft release ${release.name}...`);
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: ${{ steps.release_drafter.outputs.id }},
+                draft: false,
+                tag_name: '${{ github.event.inputs.tag || steps.release_drafter.outputs.tag_name }}'
+              });
+              console.log(`Release published at ${release.html_url}`);
+            } else {
+              console.log(`Release ${release.name} is already published`);
+            }
+
+      - name: Display Release URL
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::notice ::Release updated at ${{ steps.release_drafter.outputs.html_url }}"
+          echo "Release ${{ steps.release_drafter.outputs.name }} ready."
+          if [[ "${{ github.event.inputs.publish }}" == "true" ]]; then
+            echo "Release has been published!"
+          else
+            echo "Release is still in draft mode. Run workflow again with 'publish' option to publish."
+          fi

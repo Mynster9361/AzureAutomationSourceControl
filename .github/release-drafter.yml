@@ -1,31 +1,123 @@
-name-template: "v$RESOLVED_VERSION 🌈"
+name-template: "v$RESOLVED_VERSION"
 tag-template: "v$RESOLVED_VERSION"
 categories:
-  - title: "🚀 Features"
+  - title: " Features"
     labels:
       - "feature"
       - "enhancement"
+      - "feat"
   - title: "🐛 Bug Fixes"
     labels:
       - "fix"
       - "bugfix"
       - "bug"
   - title: "🧰 Maintenance"
-    label: "chore"
+    labels:
+      - "chore"
+      - "documentation"
+      - "docs"
+      - "refactor"
+      - "test"
+      - "ci"
+      - "perf"
+
 change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
-change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
+
 version-resolver:
   major:
     labels:
       - "major"
+      - "breaking"
   minor:
     labels:
       - "minor"
+      - "feature"
+      - "feat"
+      - "enhancement"
   patch:
     labels:
       - "patch"
+      - "fix"
+      - "bugfix"
+      - "bug"
+      - "hotfix"
+      - "docs"
+      - "documentation"
+      - "chore"
   default: patch
+
+autolabeler:
+  - label: "bug"
+    branch:
+      - '/fix\/.+/'
+    title:
+      - "/fix/i"
+      - "/bug/i"
+  - label: "feature"
+    branch:
+      - '/feat\/.+/'
+      - '/feature\/.+/'
+    title:
+      - "/feat/i"
+      - "/feature/i"
+  - label: "chore"
+    branch:
+      - '/chore\/.+/'
+    title:
+      - "/chore/i"
+  - label: "documentation"
+    branch:
+      - '/docs?\/.+/'
+    title:
+      - "/docs/i"
+      - "/documentation/i"
+    files:
+      - "*.md"
+      - "docs/**/*"
+  - label: "refactor"
+    branch:
+      - '/refactor\/.+/'
+    title:
+      - "/refactor/i"
+
 template: |
-  ## Changes
+  ## What's Changed in $NEXT_PATCH_VERSION
 
   $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+  ## Installation
+
+  ```yaml
+  steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Sync Azure Automation Runbooks
+      uses: $OWNER/$REPOSITORY@v$RESOLVED_VERSION
+      with:
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        automationAccountName: ${{ secrets.AUTOMATION_ACCOUNT_NAME }}
+        path: './runbooks'
+  ```
+
+  ## Contributors
+
+  $CONTRIBUTORS
+  | `subscription_id` | Azure subscription ID | Required |
+  | `resource_group` | Resource group name | Required |
+  | `automation_account` | Automation account name | Required |
+  | `path_filter` | Path filter for files | `.` (all files) |
+  | `recursive` | Process files recursively | `true` |
+  | `exclude_paths` | Paths to exclude | `.github/,.vscode/,docs/,README.md,LICENSE` |
+  | `validate_all` | Process all files | `false` |
+
+  ## Full documentation
+
+  See the [README](https://github.com/Mynster9361/AzureAutomationSourceControl/blob/main/README.md) for full documentation.
+
+  $CONTRIBUTORS
