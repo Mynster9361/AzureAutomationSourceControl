@@ -1,94 +1,43 @@
 name: Release Drafter
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number to release (e.g., v1.0.0)'
-        required: true
-      prerelease:
-        description: 'Is this a prerelease?'
-        type: boolean
-        default: false
-      draft:
-        description: 'Create as a draft release?'
-        type: boolean
-        default: true
-      title:
-        description: 'Release title (optional, defaults to version number)'
-        required: false
+  push:
+    # branches to consider in the event; optional, defaults to all
+    branches:
+      - main
+      - master
+
+  # pull_request event is required only for autolabeler
+  pull_request:
+    # Only following types are handled by the action, but one can default to all as well
+    types: [opened, reopened, synchronize]
+  # pull_request_target event is required for autolabeler to support PRs from forks
+  # pull_request_target:
+  #   types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
 
 jobs:
-  draft-release:
-    runs-on: ubuntu-latest
+  update_release_draft:
     permissions:
+      # write permission is required to create a github release
       contents: write
-
+      # write permission is required for autolabeler
+      # otherwise, read permission is required at least
+      pull-requests: write
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0  # Important for generating release notes based on history
+      # (Optional) GitHub Enterprise requires GHE_HOST variable set
+      #- name: Set GHE_HOST
+      #  run: |
+      #    echo "GHE_HOST=${GITHUB_SERVER_URL##https:\/\/}" >> $GITHUB_ENV
 
-      - name: Generate Release Notes
-        id: release_notes
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          VERSION_WITHOUT_V="${VERSION#v}"
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-
-          echo "## Azure Automation Source Control $VERSION" > RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-
-          if [[ -n "$PREVIOUS_TAG" ]]; then
-            echo "### Changes since $PREVIOUS_TAG" >> RELEASE_NOTES.md
-            echo "" >> RELEASE_NOTES.md
-            git log --pretty=format:"* %s (%h)" $PREVIOUS_TAG..HEAD | grep -v "Merge pull request" >> RELEASE_NOTES.md
-          else
-            echo "### Initial Release" >> RELEASE_NOTES.md
-            echo "" >> RELEASE_NOTES.md
-            git log --pretty=format:"* %s (%h)" | grep -v "Merge pull request" | head -20 >> RELEASE_NOTES.md
-          fi
-
-          # Add installation instructions
-          echo "" >> RELEASE_NOTES.md
-          echo "### Installation" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "```yaml" >> RELEASE_NOTES.md
-          echo "- uses: Mynster9361/AzureAutomationSourceControl@$VERSION" >> RELEASE_NOTES.md
-          echo "  with:" >> RELEASE_NOTES.md
-          echo "    subscription_id: \${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> RELEASE_NOTES.md
-          echo "    resource_group: \${{ secrets.AZURE_RESOURCE_GROUP }}" >> RELEASE_NOTES.md
-          echo "    automation_account: \${{ secrets.AZURE_AUTOMATION_ACCOUNT }}" >> RELEASE_NOTES.md
-          echo "```" >> RELEASE_NOTES.md
-
-          # Print the release notes for debugging
-          cat RELEASE_NOTES.md
-
-          # Save release notes to step outputs
-          notes="$(cat RELEASE_NOTES.md)"
-          notes="${notes//'%'/'%25'}"
-          notes="${notes//$'\n'/'%0A'}"
-          notes="${notes//$'\r'/'%0D'}"
-          echo "content=$notes" >> $GITHUB_OUTPUT
-
-      - name: Create Tag
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          git tag -f $VERSION
-          git push origin $VERSION -f
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: ${{ github.event.inputs.title || github.event.inputs.version }}
-          body: ${{ steps.release_notes.outputs.content }}
-          draft: ${{ github.event.inputs.draft }}
-          prerelease: ${{ github.event.inputs.prerelease }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Display Release URL
-        run: |
-          echo "::notice ::Release created at ${{ steps.create_release.outputs.url }}"
+      # Drafts your next Release notes as Pull Requests are merged into "master"
+      - uses: release-drafter/release-drafter@v6
+        # (Optional) specify config name to use, relative to .github/. Default: release-drafter.yml
+        # with:
+        #   config-name: my-config.yml
+        #   disable-autolabeler: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
