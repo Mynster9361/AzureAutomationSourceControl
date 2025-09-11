@@ -205,3 +205,7 @@ workflow My-Workflow {
 
 Due to some limitations in the GitHub workflow and detecting changes on multiple files the seperation charactere is a space.
 So instead of naming your file "Get Some.ps1" use "Get-Some.ps1" then it will pick up the file correctly if you do not do this then it will consider "Get Some.ps1" to be 2 seperate files one called "Get" with no file extension and one called "Some.ps1" which will then be created in Azure Automation
+
+## Full sync is not completely implemented
+
+Currently the full sync is not working so the source control currently is only incremential
