@@ -120,10 +120,10 @@ runs:
           else
             # Process only changed files in specified path
             if [[ "$RECURSIVE" == "true" ]]; then
-              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADMR]\s\+$PATH_FILTER")
             else
               # Only match files directly in the path, not subdirectories
-              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -E "^[ADM]\s\+$PATH_FILTER[^/]*$")
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -E "^[ADMR]\s\+$PATH_FILTER[^/]*$")
             fi
 
             # Also apply exclusions if specified
@@ -154,10 +154,12 @@ runs:
           else
             # Process only changed files in specified path
             if [[ "$RECURSIVE" == "true" ]]; then
-              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADM]\s\+$PATH_FILTER")
+              # Include R (renamed) files in the grep pattern
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep "^[ADMR]\s\+$PATH_FILTER")
             else
               # Only match files directly in the path, not subdirectories
-              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -E "^[ADM]\s\+$PATH_FILTER[^/]*$")
+              # Include R (renamed) files in the grep pattern
+              DIFF_OUTPUT=$(echo "$DIFF_RAW" | grep -E "^[ADMR]\s\+$PATH_FILTER[^/]*$")
             fi
 
             # Also apply exclusions if specified
@@ -217,19 +219,32 @@ runs:
           fi
 
           status=${line:0:1}  # Get first character (status code)
+          echo "DEBUG: Processing line: $line with status: $status"
 
           if [[ "$status" == "A" || "$status" == "M" ]]; then
             # Added or modified file
             file=$(echo "$line" | awk '{print $2}')
+            echo "DEBUG: Added/Modified file: $file"
             ADDED_MODIFIED_FILES+="$file "
           elif [[ "$status" == "D" ]]; then
             # Deleted file
             file=$(echo "$line" | awk '{print $2}')
+            echo "DEBUG: Deleted file: $file"
             DELETED_FILES+="$file "
           elif [[ "$status" == "R" ]]; then
             # Renamed file - treat as both deletion and addition
-            old_file=$(echo "$line" | awk '{print $2}')
-            new_file=$(echo "$line" | awk '{print $3}')
+            # Format for R might be either "R old-name new-name" or "R100 old-name new-name"
+            if [[ $line =~ R[0-9]+ ]]; then
+              # R100 format (percentage of similarity)
+              old_file=$(echo "$line" | awk '{print $2}')
+              new_file=$(echo "$line" | awk '{print $3}')
+            else
+              # Simple R format
+              old_file=$(echo "$line" | awk '{print $2}')
+              new_file=$(echo "$line" | awk '{print $3}')
+            fi
+
+            echo "DEBUG: Renamed file: $old_file -> $new_file"
             DELETED_FILES+="$old_file "
             ADDED_MODIFIED_FILES+="$new_file "
           fi
@@ -238,6 +253,10 @@ runs:
         # Trim trailing spaces
         ADDED_MODIFIED_FILES=$(echo "$ADDED_MODIFIED_FILES" | xargs)
         DELETED_FILES=$(echo "$DELETED_FILES" | xargs)
+
+        # Debug final outputs
+        echo "DEBUG: Final ADDED_MODIFIED_FILES: $ADDED_MODIFIED_FILES"
+        echo "DEBUG: Final DELETED_FILES: $DELETED_FILES"
 
         # Set outputs
         echo "added_modified_files=$ADDED_MODIFIED_FILES" >> $GITHUB_OUTPUT
