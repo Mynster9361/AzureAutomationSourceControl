@@ -67,6 +67,8 @@ runs:
           EXCLUDE_PATTERN="${EXCLUDE_PATTERN}^$i"
         done
 
+        echo "DEBUG: Exclude pattern: $EXCLUDE_PATTERN"
+
         # Different approach based on event type
         if [[ "${{ inputs.validate_all }}" == "true" ]]; then
           # For manual validation of all files
@@ -165,42 +167,6 @@ runs:
             # Also apply exclusions if specified
             if [[ -n "$EXCLUDE_PATTERN" ]]; then
               DIFF_OUTPUT=$(echo "$DIFF_OUTPUT" | grep -v -E "$EXCLUDE_PATTERN")
-            fi
-          fi
-
-        else
-          # For other events, list all files according to filter
-          echo "Other event, filtering files based on path"
-
-          if [[ "$PATH_FILTER" == "." ]]; then
-            # Process all files in repo, excluding specified paths
-            if [[ -n "$EXCLUDE_PATTERN" ]]; then
-              if [[ "$RECURSIVE" == "true" ]]; then
-                DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
-              else
-                DIFF_OUTPUT=$(find . -maxdepth 1 -type f -not -path "*/\.*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
-              fi
-            else
-              if [[ "$RECURSIVE" == "true" ]]; then
-                DIFF_OUTPUT=$(find . -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
-              else
-                DIFF_OUTPUT=$(find . -maxdepth 1 -type f -not -path "*/\.*" | sed 's/^\.\//A /')
-              fi
-            fi
-          else
-            # Process only files in specified path
-            if [[ -n "$EXCLUDE_PATTERN" ]]; then
-              if [[ "$RECURSIVE" == "true" ]]; then
-                DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
-              else
-                DIFF_OUTPUT=$(find $PATH_FILTER -maxdepth 1 -type f -not -path "*/\.*" | grep -v -E "$EXCLUDE_PATTERN" | sed 's/^\.\//A /')
-              fi
-            else
-              if [[ "$RECURSIVE" == "true" ]]; then
-                DIFF_OUTPUT=$(find $PATH_FILTER -type f -not -path "*/\.*" -not -path "*/node_modules/*" | sed 's/^\.\//A /')
-              else
-                DIFF_OUTPUT=$(find $PATH_FILTER -maxdepth 1 -type f -not -path "*/\.*" | sed 's/^\.\//A /')
-              fi
             fi
           fi
         fi
@@ -313,6 +279,11 @@ runs:
         Write-Output "Processing files from GitHub Actions workflow..."
         Write-Output "Added/Modified files: $addedModifiedFiles"
         Write-Output "Deleted files: $deletedFiles"
+
+        if ([string]::IsNullOrEmpty($addedModifiedFiles) -and [string]::IsNullOrEmpty($deletedFiles)) {
+          Write-Output "No files to process. Exiting."
+          exit 0
+        }
 
         # Get Azure token using OIDC credentials from GitHub
         if ($env:GITHUB_ACTIONS -eq "true") {
